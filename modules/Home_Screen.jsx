@@ -6,21 +6,24 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
+  ImageBackground,
+  Modal,
+  Button,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NavigationContainer } from "@react-navigation/native";
-import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "react-native-vector-icons/Ionicons";
 
-const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const HomeScreen = ({ navigation }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [todos, setTodos] = useState([]);
-  const [completedTodos, setCompletedTodos] = useState([]); // New state for completed todos
+  const [completedTodos, setCompletedTodos] = useState([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [todoToDelete, setTodoToDelete] = useState(null);
 
   useEffect(() => {
     loadTodos();
@@ -28,18 +31,21 @@ const HomeScreen = ({ navigation }) => {
 
   const loadTodos = async () => {
     const storedTodos = await AsyncStorage.getItem("todos");
-    const storedCompletedTodos = await AsyncStorage.getItem("completedTodos"); // Load completed todos
+    const storedCompletedTodos = await AsyncStorage.getItem("completedTodos");
     if (storedTodos) {
       setTodos(JSON.parse(storedTodos));
     }
     if (storedCompletedTodos) {
-      setCompletedTodos(JSON.parse(storedCompletedTodos)); // Set completed todos
+      setCompletedTodos(JSON.parse(storedCompletedTodos));
     }
   };
 
   const saveTodos = async (newTodos, newCompletedTodos = completedTodos) => {
     await AsyncStorage.setItem("todos", JSON.stringify(newTodos));
-    await AsyncStorage.setItem("completedTodos", JSON.stringify(newCompletedTodos)); // Save completed todos
+    await AsyncStorage.setItem(
+      "completedTodos",
+      JSON.stringify(newCompletedTodos)
+    );
   };
 
   const addTodo = () => {
@@ -66,16 +72,20 @@ const HomeScreen = ({ navigation }) => {
     const newTodos = todos.filter((todo) => todo.id !== id);
     setTodos(newTodos);
     saveTodos(newTodos);
+    setTodoToDelete(null);
   };
 
   const markTodoDone = (id) => {
     const todo = todos.find((todo) => todo.id === id);
     if (todo) {
       const newTodos = todos.filter((todo) => todo.id !== id);
-      const newCompletedTodos = [...completedTodos, { ...todo, status: "Done" }];
+      const newCompletedTodos = [
+        ...completedTodos,
+        { ...todo, status: "Done" },
+      ];
       setTodos(newTodos);
       setCompletedTodos(newCompletedTodos);
-      saveTodos(newTodos, newCompletedTodos); 
+      saveTodos(newTodos, newCompletedTodos);
     }
   };
 
@@ -83,64 +93,103 @@ const HomeScreen = ({ navigation }) => {
     navigation.navigate("TodoDetails", { todo });
   };
 
+  const showDeleteConfirmation = (id) => {
+    setTodoToDelete(id);
+    setModalVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (todoToDelete !== null) {
+      removeTodo(todoToDelete);
+    }
+    setModalVisible(false);
+  };
+
+  const cancelDelete = () => {
+    setModalVisible(false);
+    setTodoToDelete(null);
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>TODO APP</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Todo Title"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Todo Description"
-        value={description}
-        onChangeText={setDescription}
-      />
-      <TouchableOpacity style={styles.addButton} onPress={addTodo}>
-        <Text style={styles.addButtonText}>Submit</Text>
-      </TouchableOpacity>
-      <FlatList
-        data={todos}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.todoItem}>
-            <TouchableOpacity onPress={() => navigateToDetails(item)}>
-              <Text style={styles.todoTitle}>{item.title}</Text>
-              <Text style={styles.todoDescription}>{item.description}</Text>
-            </TouchableOpacity>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity onPress={() => editTodo(item.id)}>
-                <Icon name="pencil-outline" size={20} color="#007bff" />
+    <ImageBackground
+      source={{
+        uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRRkoMuFUneOoSpINw6FJan7yppHzyN3rY2ow&s",
+      }}
+      style={styles.backgroundImage}
+    >
+      <View style={styles.container}>
+        <Text style={styles.title}>TODO APP</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Todo Title"
+          value={title}
+          onChangeText={setTitle}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Todo Description"
+          value={description}
+          onChangeText={setDescription}
+        />
+        <TouchableOpacity style={styles.addButton} onPress={addTodo}>
+          <Text style={styles.addButtonText}>Submit</Text>
+        </TouchableOpacity>
+        <FlatList
+          data={todos}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={({ item }) => (
+            <View style={styles.todoItem}>
+              <TouchableOpacity onPress={() => navigateToDetails(item)}>
+                <Text style={styles.todoTitle}>{item.title}</Text>
+                <Text style={styles.todoDescription}>{item.description}</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => removeTodo(item.id)}>
-                <Icon name="trash-outline" size={20} color="#dc3545" />
-              </TouchableOpacity>
-              {item.status === "Active" && (
-                <TouchableOpacity onPress={() => markTodoDone(item.id)}>
-                  <Icon
-                    name="checkmark-done-outline"
-                    size={20}
-                    color="#28a745"
-                  />
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity onPress={() => editTodo(item.id)}>
+                  <Icon name="pencil-outline" size={20} color="#007bff" />
                 </TouchableOpacity>
-              )}
+                <TouchableOpacity
+                  onPress={() => showDeleteConfirmation(item.id)}
+                >
+                  <Icon name="trash-outline" size={20} color="#dc3545" />
+                </TouchableOpacity>
+                {item.status === "Active" && (
+                  <TouchableOpacity onPress={() => markTodoDone(item.id)}>
+                    <Icon
+                      name="checkmark-done-outline"
+                      size={20}
+                      color="#28a745"
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+        />
+        <Modal
+          transparent={true}
+          animationType="slide"
+          visible={modalVisible}
+          onRequestClose={cancelDelete}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Confirm Deletion</Text>
+              <Text style={styles.modalText}>
+                Are you sure you want to delete this todo item?
+              </Text>
+              <View style={styles.modalButtons}>
+                <Button title="Cancel" onPress={cancelDelete} />
+                <Button
+                  title="Delete"
+                  onPress={confirmDelete}
+                  color="#dc3545"
+                />
+              </View>
             </View>
           </View>
-        )}
-      />
-    </View>
-  );
-};
-
-const TodoDetailsScreen = ({ route }) => {
-  const { todo } = route.params;
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{todo.title}</Text>
-      <Text style={styles.description}>{todo.description}</Text>
-    </View>
+        </Modal>
+      </View>
+    </ImageBackground>
   );
 };
 
@@ -175,23 +224,6 @@ const CompletedTasksScreen = () => {
   );
 };
 
-const MainScreen = () => {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ title: "Home" }}
-      />
-      <Stack.Screen
-        name="TodoDetails"
-        component={TodoDetailsScreen}
-        options={{ title: "Todo Details" }}
-      />
-    </Stack.Navigator>
-  );
-};
-
 const App = () => {
   return (
     <NavigationContainer>
@@ -199,7 +231,7 @@ const App = () => {
         screenOptions={({ route }) => ({
           tabBarIcon: ({ color, size }) => {
             let iconName;
-            if (route.name === "Main") {
+            if (route.name === "Home") {
               iconName = "home-outline";
             } else if (route.name === "Completed") {
               iconName = "checkmark-done-outline";
@@ -212,7 +244,7 @@ const App = () => {
           inactiveTintColor: "gray",
         }}
       >
-        <Tab.Screen name="Main" component={MainScreen} />
+        <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Completed" component={CompletedTasksScreen} />
       </Tab.Navigator>
     </NavigationContainer>
@@ -223,14 +255,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "rgba(255, 255, 255, 0.1)", 
   },
   title: {
     fontSize: 24,
     fontWeight: "bold",
     textAlign: "center",
     marginBottom: 16,
-    color: "#333",
+    color: "#fff",
   },
   input: {
     borderWidth: 1,
@@ -271,16 +303,42 @@ const styles = StyleSheet.create({
   todoDescription: {
     fontSize: 14,
     color: "#666",
-    marginBottom: 8,
   },
   buttonContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    width: 100,
+    alignItems: "center",
   },
-  description: {
+  backgroundImage: {
+    flex: 1,
+    resizeMode: "cover",
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modalContent: {
+    width: "80%",
+    padding: 16,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  modalText: {
     fontSize: 16,
-    color: "#666",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
   },
 });
 
