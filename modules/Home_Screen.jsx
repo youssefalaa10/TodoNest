@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,33 +7,80 @@ import {
   FlatList,
   StyleSheet,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { NavigationContainer } from "@react-navigation/native";
+import { createStackNavigator } from "@react-navigation/stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import Icon from "react-native-vector-icons/Ionicons";
 
-const TodoApp = () => {
+const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator();
+
+const HomeScreen = ({ navigation }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [todos, setTodos] = useState([]);
-  const [filter, setFilter] = useState("All");
+  const [completedTodos, setCompletedTodos] = useState([]); // New state for completed todos
+
+  useEffect(() => {
+    loadTodos();
+  }, []);
+
+  const loadTodos = async () => {
+    const storedTodos = await AsyncStorage.getItem("todos");
+    const storedCompletedTodos = await AsyncStorage.getItem("completedTodos"); // Load completed todos
+    if (storedTodos) {
+      setTodos(JSON.parse(storedTodos));
+    }
+    if (storedCompletedTodos) {
+      setCompletedTodos(JSON.parse(storedCompletedTodos)); // Set completed todos
+    }
+  };
+
+  const saveTodos = async (newTodos, newCompletedTodos = completedTodos) => {
+    await AsyncStorage.setItem("todos", JSON.stringify(newTodos));
+    await AsyncStorage.setItem("completedTodos", JSON.stringify(newCompletedTodos)); // Save completed todos
+  };
 
   const addTodo = () => {
     if (title && description) {
-      setTodos([
-        ...todos,
-        { id: Date.now(), title, description, status: "Active" },
-      ]);
+      const newTodo = { id: Date.now(), title, description, status: "Active" };
+      const newTodos = [...todos, newTodo];
+      setTodos(newTodos);
+      saveTodos(newTodos);
       setTitle("");
       setDescription("");
     }
   };
 
-  const filteredTodos = todos.filter((todo) => {
-    if (filter === "All") return true;
-    return todo.status === filter;
-  });
+  const editTodo = (id) => {
+    const todo = todos.find((todo) => todo.id === id);
+    if (todo) {
+      setTitle(todo.title);
+      setDescription(todo.description);
+      removeTodo(id);
+    }
+  };
 
-  const changeStatus = (id, status) => {
-    setTodos(
-      todos.map((todo) => (todo.id === id ? { ...todo, status } : todo))
-    );
+  const removeTodo = (id) => {
+    const newTodos = todos.filter((todo) => todo.id !== id);
+    setTodos(newTodos);
+    saveTodos(newTodos);
+  };
+
+  const markTodoDone = (id) => {
+    const todo = todos.find((todo) => todo.id === id);
+    if (todo) {
+      const newTodos = todos.filter((todo) => todo.id !== id);
+      const newCompletedTodos = [...completedTodos, { ...todo, status: "Done" }];
+      setTodos(newTodos);
+      setCompletedTodos(newCompletedTodos);
+      saveTodos(newTodos, newCompletedTodos); 
+    }
+  };
+
+  const navigateToDetails = (todo) => {
+    navigation.navigate("TodoDetails", { todo });
   };
 
   return (
@@ -54,43 +101,32 @@ const TodoApp = () => {
       <TouchableOpacity style={styles.addButton} onPress={addTodo}>
         <Text style={styles.addButtonText}>Submit</Text>
       </TouchableOpacity>
-      <View style={styles.divider} />
-      <View style={styles.filterContainer}>
-        {["All", "Active", "Done"].map((status) => (
-          <TouchableOpacity
-            key={status}
-            style={[
-              styles.filterButton,
-              filter === status && styles.selectedFilterButton,
-            ]}
-            onPress={() => setFilter(status)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === status && styles.selectedFilterText,
-              ]}
-            >
-              {status}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
       <FlatList
-        data={filteredTodos}
+        data={todos}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
           <View style={styles.todoItem}>
-            <Text style={styles.todoTitle}>{item.title}</Text>
-            <Text style={styles.todoDescription}>{item.description}</Text>
-            {item.status === "Active" && (
-              <TouchableOpacity
-                style={styles.doneButton}
-                onPress={() => changeStatus(item.id, "Done")}
-              >
-                <Text style={styles.doneButtonText}>Done</Text>
+            <TouchableOpacity onPress={() => navigateToDetails(item)}>
+              <Text style={styles.todoTitle}>{item.title}</Text>
+              <Text style={styles.todoDescription}>{item.description}</Text>
+            </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity onPress={() => editTodo(item.id)}>
+                <Icon name="pencil-outline" size={20} color="#007bff" />
               </TouchableOpacity>
-            )}
+              <TouchableOpacity onPress={() => removeTodo(item.id)}>
+                <Icon name="trash-outline" size={20} color="#dc3545" />
+              </TouchableOpacity>
+              {item.status === "Active" && (
+                <TouchableOpacity onPress={() => markTodoDone(item.id)}>
+                  <Icon
+                    name="checkmark-done-outline"
+                    size={20}
+                    color="#28a745"
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
       />
@@ -98,12 +134,94 @@ const TodoApp = () => {
   );
 };
 
+const TodoDetailsScreen = ({ route }) => {
+  const { todo } = route.params;
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>{todo.title}</Text>
+      <Text style={styles.description}>{todo.description}</Text>
+    </View>
+  );
+};
+
+const CompletedTasksScreen = () => {
+  const [completedTodos, setCompletedTodos] = useState([]);
+
+  useEffect(() => {
+    loadCompletedTodos();
+  }, []);
+
+  const loadCompletedTodos = async () => {
+    const storedCompletedTodos = await AsyncStorage.getItem("completedTodos");
+    if (storedCompletedTodos) {
+      setCompletedTodos(JSON.parse(storedCompletedTodos));
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Completed Tasks</Text>
+      <FlatList
+        data={completedTodos}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.todoItem}>
+            <Text style={styles.todoTitle}>{item.title}</Text>
+            <Text style={styles.todoDescription}>{item.description}</Text>
+          </View>
+        )}
+      />
+    </View>
+  );
+};
+
+const MainScreen = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ title: "Home" }}
+      />
+      <Stack.Screen
+        name="TodoDetails"
+        component={TodoDetailsScreen}
+        options={{ title: "Todo Details" }}
+      />
+    </Stack.Navigator>
+  );
+};
+
+const App = () => {
+  return (
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ color, size }) => {
+            let iconName;
+            if (route.name === "Main") {
+              iconName = "home-outline";
+            } else if (route.name === "Completed") {
+              iconName = "checkmark-done-outline";
+            }
+            return <Icon name={iconName} size={size} color={color} />;
+          },
+        })}
+        tabBarOptions={{
+          activeTintColor: "#007bff",
+          inactiveTintColor: "gray",
+        }}
+      >
+        <Tab.Screen name="Main" component={MainScreen} />
+        <Tab.Screen name="Completed" component={CompletedTasksScreen} />
+      </Tab.Navigator>
+    </NavigationContainer>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
-    display: "flex",
-    flexDirection:"column",
-    marginTop: 40,
-    justifyContent: "center",
+    flex: 1,
     padding: 16,
     backgroundColor: "#f9f9f9",
   },
@@ -121,7 +239,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 25,
     backgroundColor: "#fff",
-    
   },
   addButton: {
     backgroundColor: "#007bff",
@@ -135,31 +252,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-  divider: {
-    height: 1,
-    backgroundColor: "#ccc",
-    marginVertical: 16,
-  },
-  filterContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 16,
-  },
-  filterButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: "#f0f0f0",
-  },
-  selectedFilterButton: {
-    backgroundColor: "#007bff",
-  },
-  filterText: {
-    color: "#007bff",
-  },
-  selectedFilterText: {
-    color: "#fff",
-  },
   todoItem: {
     padding: 16,
     borderBottomWidth: 1,
@@ -167,6 +259,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 8,
     marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   todoTitle: {
     fontSize: 18,
@@ -178,18 +273,15 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 8,
   },
-  doneButton: {
-    backgroundColor: "#28a745",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: "center",
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: 100,
   },
-  doneButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
+  description: {
+    fontSize: 16,
+    color: "#666",
   },
 });
 
-export default TodoApp;
+export default App;
